@@ -1,0 +1,52 @@
+---
+- hosts: all
+  become: yes
+  gather_facts: yes
+  vars:
+    # Define files and directories with permissions to set
+    # Filds where named and set based on https://docs.ansible.com/ansible/latest/collections/ansible/builtin/file_module.html
+    play_file_list:
+      - { path: '/tmp/file1', state: file,      owner: 'root',  group: 'root',  mode: '0600' }
+      - { path: '/tmp/file2', state: file,      owner: 'root',  group: 'root',  mode: '0600' }
+      - { path: '/tmp/file3', state: file,      owner: 'root',  group: 'root',  mode: '0600' }
+      - { path: '/tmp/dir',   state: directory, owner: 'root',  group: 'wheel', mode: '0640'}
+      - { path: '/tmp/dir2',  state: directory, owner: 'root',  group: 'wheel', mode: '0640'}
+    play_debug: False
+
+  tasks:
+  - name: Get state of the files
+    stat:
+      path: "{{ item.path }}"
+    register: fstat
+    with_items: "{{ play_file_list }}"
+
+  - name: Populate state of the files as fact
+    set_fact:
+      state_of_files: "{{ state_of_files | default({} ) | combine( {item.stat.path: 'directory' if item.stat.isdir else 'file'} ) }}"
+    when: item.stat.exists
+    with_items: "{{ fstat.results }}"
+
+  - name: Show existing files\directories and target state
+    debug:
+      msg: 
+        - "{{ item.path }} is a {{ state_of_files[item.path] }}"
+        - "Desired state: {{ item.state }}, ownership: {{ item.owner }}:{{ item.group }}, permission: {{ item.mode }}"
+    when: 
+      - state_of_files is defined
+      - item.path in state_of_files 
+      - state_of_files[item.path] == item.state
+      - play_debug | bool
+    with_items: "{{ play_file_list }}"
+
+  - name: Set file ownership
+    file:
+      path: "{{ item.path }}"
+      owner: "{{ item.owner }}"
+      group: "{{ item.group }}"
+      mode: "{{ item.mode }}"
+      state: "{{ item.state }}"
+    when: 
+      - state_of_files is defined
+      - item.path in state_of_files
+      - state_of_files[item.path] == item.state
+    with_items: "{{ play_file_list }}"
